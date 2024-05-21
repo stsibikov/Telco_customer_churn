@@ -1,3 +1,6 @@
+import pandas as pd
+import numpy as np
+
 import plotly
 import plotly.express as px
 
@@ -58,7 +61,7 @@ def fmt_bar(df,
         else:
             text = None
   
-
+    
     fig = px.bar(df, x=group, y=value, color=color, 
                  text=text, template='plotly_white', width=500, height=500, **kwargs)
     
@@ -67,3 +70,5 @@ def fmt_bar(df,
     fig.update_layout(yaxis={'title':None,'tickfont':{'size':14}}, xaxis={'title':None,'tickfont':{'size':14}}, 
                       margin={'t':60,'b':20,'l':20,'r':20,'pad':0}, showlegend=False, title=title)
     return fig
+
+

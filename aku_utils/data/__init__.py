@@ -110,3 +110,108 @@ def inspect_mean(df : pd.DataFrame,
         return fmt_bar(out)
     else:
         return out
+
+
+def _get_optimal_display_objs(srs):
+    srs = srs + srs[0] / len(srs)**2 * srs.index**2 - srs[0] / len(srs) * srs.index / 2
+    to_display = srs.idxmin()
+    return to_display
+
+
+def trunc_data_for_display(groupby, min_=4, max_=20) -> pd.DataFrame:
+    '''
+    Args:
+        groupby: result of a groupby (no index!)
+        min_: min objects to plot
+        max_: max objects to plot
+
+    Returns:
+        truncated (or not) dataframe
+    '''
+    if groupby.shape[0] <= min_:
+        return groupby
+
+    groupby = groupby.sort_values(by=groupby.columns[-1], ascending=False)
+    to_display = _get_optimal_display_objs(groupby.iloc[:max_, -1].reset_index(drop=True))
+    to_display = min(max(to_display, min_), max_)
+
+    return groupby[:to_display]
+
+
+def explore(df : pd.DataFrame,
+            columns : list | None = None,
+            target : str | None = None,
+            aggfunc : str = 'mean',
+            **kwargs) -> None:
+    '''
+    Builds groupby plots of all columns from df or the ones specified. Plots are separate.
+
+    This function requires specific, although the most rational, column naming convention:
+        * columns are lowered and have spaces or underscores between their names
+        * normal naming, so, eg, gender refers to gender - explore() can automatically
+            convert values based on naming
+    
+    Args:
+        columns: list of columns to build plots on. if None, builds plots of all columns
+        target: if specified, groupby result will aggregate this column.
+            If this is specified and `aggfunc` is not, mean will be used
+        aggfunc: string of an aggfunc to use with `target`
+        kwargs: kwargs for fmt_bar()
+    
+    Returns:
+        None. Draws N plots
+
+    If target is specified with, eg, mean, then the plot would draw the top categories with the top mean
+    '''
+    from aku_utils.plot import fmt_bar
+
+    def modify_srs_tell_if_trunc(srs) -> tuple:
+        '''
+        returns series (maybe modified), bool whether to run trunc_data_for_display
+        '''
+        if pd.api.types.is_float_dtype(srs):
+            return pd.cut(srs, 5).astype('str'), False
+
+        if set(srs.unique()) == {0, 1} and srs.name == 'gender':
+            return srs.replace({0 : "Female", 1 : "Male"}), False
+
+        if set(srs.unique()) == {0, 1}:
+            human_srs_name = srs.name.replace('_', ' ')
+            return srs.replace({0 : f"No {human_srs_name}", 1 : f"{human_srs_name.capitalize()}"}), False
+
+        if pd.api.types.is_integer_dtype(srs):
+            if srs.nunique() <= 10:
+                # assumed to be ordinal category
+                return srs, False
+            else:
+                return pd.cut(srs, 5, precision=0).astype('str'), False
+
+        return srs, True
+
+    if columns is None:
+        if target is None:
+            columns = df.columns
+        else:
+            columns = df.drop(target, axis=1).columns
+
+    for col in columns:
+        srs, if_trunc = modify_srs_tell_if_trunc(df[col])
+
+        if target is None:
+            groupby = pd.Series(srs, name='count').groupby(srs).size().to_frame().reset_index()
+        else:
+            groupby = pd.concat([srs, df[target]], axis=1).groupby(col, as_index=False).agg({target : aggfunc})
+
+        if if_trunc:
+            groupby = trunc_data_for_display(groupby)
+        
+        #title
+        if target is None:
+            title = f'Breakdown of {col}'
+        else:
+            title = f'{aggfunc.capitalize()} of {target} by {col}'
+
+
+        fig = fmt_bar(groupby, title=title, **kwargs)
+        fig.show()
+    return None
