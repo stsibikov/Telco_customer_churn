@@ -73,3 +73,40 @@ def type_breakdown(df):
     srs = df.dtypes.to_frame().reset_index()
     srs.columns = ['col', 'type']
     return srs.groupby('type').size().sort_values(ascending=False)
+
+
+def inspect_mean(df : pd.DataFrame,
+                 group : str = 'phone_service',
+                 target : str = 'churn_label',
+                 include_overall : bool = True,
+                 fast_bar : bool = False):
+    '''
+    Make a table with mean of target 
+
+    Args:
+        df: pd.DataFrame, original
+        group: name of the column with categories to divide df by ('phone_service')
+        target: name of the column with target values ('churn_label')
+        include_overall: whether to include the overall of target into table
+        fast_bar: whether to plot the bar with ak.fmt_bar() instead of returning the table (False).
+        For bar plot modification simply return table with `fast_bar = False` and wrap it around `ak.fmt_bar()`
+
+    Returns:
+        pd.DataFrame: if fast_bar is False
+        plotly.graph_objects.Figure: if fast_bar is True
+    '''
+
+    human_group_name = group.replace('_', ' ')
+    out = df.groupby(group, as_index=False)[target].mean()
+
+    if set(out[group].unique().tolist()) == {0, 1}:
+        out[group] = out[group].replace({0 : f'No {human_group_name}', 1 : human_group_name.capitalize()})
+    
+    if include_overall:
+        out = pd.concat([out, pd.DataFrame({group : ['Overall'], target : [df[target].mean()]})])
+
+    if fast_bar:
+        from aku_utils.plot import fmt_bar
+        return fmt_bar(out)
+    else:
+        return out

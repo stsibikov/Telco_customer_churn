@@ -5,7 +5,7 @@ def fmt_bar(df,
             group : str | None = None,
             color : str | None = None,
             value : str | None = None,
-            display_size : bool = True,
+            display_values : bool = True,
             display_pct : bool = True,
             title: str | None = None,
             **kwargs) -> plotly.graph_objects.Figure:
@@ -24,7 +24,7 @@ def fmt_bar(df,
 
         If you have one of ```group, value, color``` specified, specify others as well
 
-        display_size: whether to display size on bars (True)
+        display_values: whether to display values on bars (True)
         display_pct: whether to display %s on bars (True)
         title: plot title ('Breakdown by age')
 
@@ -48,12 +48,12 @@ def fmt_bar(df,
     #format bar annotations
     if display_pct:
         df['%'] = df[value] / df[value].sum()
-        if display_size:
+        if display_values:
             text = [f'{value:.2f}<br>{pct:.2%}' for value, pct in zip(df[value], df['%'])]
         else:
             text = [f'{pct:.2%}' for pct in df['%']]
     else:
-        if display_size:
+        if display_values:
             text = [f'{value:.2f}' for value in df[value]]
         else:
             text = None
