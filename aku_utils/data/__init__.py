@@ -30,8 +30,7 @@ def group_occrs(df : pd.DataFrame,
                 values = np.nan,
                 percent : bool = True):
     '''
-    Groupby occurences
-    How often do you see `values` in the DataFrame
+    Groupby occurences (count) of values by column
 
     Args:
         df: DataFrame. Recommended to use a column-wise slice when working with large dataset
@@ -113,6 +112,10 @@ def inspect_mean(df : pd.DataFrame,
 
 
 def _get_optimal_display_objs(srs):
+    '''
+    Args: srs: values series from a groupby
+    Returns: to_display: # of objects to display
+    '''
     srs = srs + srs[0] / len(srs)**2 * srs.index**2 - srs[0] / len(srs) * srs.index / 2
     to_display = srs.idxmin()
     return to_display
@@ -121,7 +124,7 @@ def _get_optimal_display_objs(srs):
 def trunc_data_for_display(groupby, min_=4, max_=20) -> pd.DataFrame:
     '''
     Args:
-        groupby: result of a groupby (no index!)
+        groupby: result of a groupby (reset index!)
         min_: min objects to plot
         max_: max objects to plot
 
@@ -138,80 +141,125 @@ def trunc_data_for_display(groupby, min_=4, max_=20) -> pd.DataFrame:
     return groupby[:to_display]
 
 
+def _bin_srs(srs):
+    pass
+
+
+def _group_date(srs):
+    pass
+
+
+def _how_to_treat_col(srs) -> dict:
+    '''
+    Returns:
+        dict with key (str) - value (Any, but mostly bool) of:
+            srs - can bin the series, shouldnt do anything else
+            needs_sorting
+            needs_truncation
+    '''
+    #gender binary
+    if set(srs.unique()) == {0, 1} and srs.name == 'gender':
+        return {'srs' : srs.replace({0 : "Female", 1 : "Male"}), 'needs_sorting' : False, 'needs_truncation' : False}
+
+
+
+    if pd.api.types.is_object_dtype(srs):
+        return {'srs' : srs, 'needs_sorting' : True, 'needs_truncation' : True}
+
+    #binary
+    if set(srs.unique()) == {0, 1}:
+        human_srs_name = srs.name.replace('_', ' ')
+        return srs.replace({0 : f"No {human_srs_name}", 1 : f"{human_srs_name.capitalize()}"}), False
+
+    #float or int
+    if pd.api.types.is_numeric_dtype(srs):
+        if srs.nunique() <= 10:
+            # assumed to be ordinal category
+            return {'srs' : srs, 'needs_sorting' : True, 'needs_truncation' : False}
+        else:
+            srs = _bin_srs(srs).astype('str')
+            return {'srs' : srs, 'needs_sorting' : True, 'needs_truncation' : False}
+
+    if pd.api.types.is_datetime64_any_dtype(srs):
+        srs = _group_date(srs)
+        return {'srs' : srs, 'needs_sorting' : True, 'needs_truncation' : False}
+
+
+    #else treat as object after converting to string (intervalindex)
+    srs = srs.astype('str')
+    return {'srs' : srs, 'needs_sorting' : True, 'needs_truncation' : True}
+
+
 def explore(df : pd.DataFrame,
-            columns : list | None = None,
+            columns : list,
+            modes : list = ['size'],
             target : str | None = None,
             aggfunc : str = 'mean',
+            sort_any : bool = True,
+            trunc_any : bool = True,
+            trust_effect_any : bool = True,
             **kwargs) -> None:
     '''
-    Builds groupby plots of all columns from df or the ones specified. Plots are separate.
+    Explore the dataset with simple visualizations to produce human-oriented graphs.
+    Function modifies the data for better readability.
 
-    This function requires specific, although the most rational, column naming convention:
-        * columns are lowered and have spaces or underscores between their names
-        * normal naming, so, eg, gender refers to gender - explore() can automatically
-            convert values based on naming
-    
     Args:
-        columns: list of columns to build plots on. if None, builds plots of all columns
-        target: if specified, groupby result will aggregate this column.
-            If this is specified and `aggfunc` is not, mean will be used
-        aggfunc: string of an aggfunc to use with `target`
-        kwargs: kwargs for fmt_bar()
-    
-    Returns:
-        None. Draws N plots
+        df: original df
+        columns: columns to explore (all by default, all but 'target' if it is there)
+        modes: how to explore the data, a list of strings (['size']):
+            'size': plot size (bar plot) of each column
+            'targeted': plot mean (or other aggfunc) of column 'target' grouped by each column.
+                Ignored if target is not provided, added by itself if target is provided.
+                Yeah, as you can see it doesnt matter if its provided, but this is important for overall structure.
+            'scatter': scatter plot a column and target column. By default, a float 'explored' column will be binned and
+                then the mean of the target column will be groupby'd by these bins. If this mode is included,
+                the function will also (!) include a scatter plot
+        target: target column to orient bar plots or scatter plots around
+        aggfunc: function to aggregate target column by. Ignored if target is not provided
+        sort_any: whether to apply sorting to any columns (from `columns`) - the algorithm will do that for some columns (True)
+        trunc_any: whether to apply column (from `columns`) truncation to any columns - the algorithm will do that for some columns (True)
+        trust_effect_any: whether to apply group trust effect to any columns. Only valid if `targeted` mode is on.
 
-    If target is specified with, eg, mean, then the plot would draw the top categories with the top mean
+    Returns:
+        Nothing. Plots plotly plots, all separate figures
     '''
     from aku_utils.plot import fmt_bar
 
-    def modify_srs_tell_if_trunc(srs) -> tuple:
-        '''
-        returns series (maybe modified), bool whether to run trunc_data_for_display
-        '''
-        if pd.api.types.is_float_dtype(srs):
-            return pd.cut(srs, 5).astype('str'), False
-
-        if set(srs.unique()) == {0, 1} and srs.name == 'gender':
-            return srs.replace({0 : "Female", 1 : "Male"}), False
-
-        if set(srs.unique()) == {0, 1}:
-            human_srs_name = srs.name.replace('_', ' ')
-            return srs.replace({0 : f"No {human_srs_name}", 1 : f"{human_srs_name.capitalize()}"}), False
-
-        if pd.api.types.is_integer_dtype(srs):
-            if srs.nunique() <= 10:
-                # assumed to be ordinal category
-                return srs, False
-            else:
-                return pd.cut(srs, 5, precision=0).astype('str'), False
-
-        return srs, True
-
+    # option processing
     if columns is None:
         if target is None:
             columns = df.columns
         else:
             columns = df.drop(target, axis=1).columns
 
-    for col in columns:
-        srs, if_trunc = modify_srs_tell_if_trunc(df[col])
 
-        if target is None:
-            groupby = pd.Series(srs, name='count').groupby(srs).size().to_frame().reset_index()
-        else:
-            groupby = pd.concat([srs, df[target]], axis=1).groupby(col, as_index=False).agg({target : aggfunc})
+    # start
+    for mode in modes:
+        for col in columns:
+            srs = df[col]
+            treat_dict = _how_to_treat_col(srs)
+            srs = treat_dict['srs']
 
-        if if_trunc:
-            groupby = trunc_data_for_display(groupby)
-        
-        #title
-        if target is None:
-            title = f'Breakdown of {col}'
-        else:
-            title = f'{aggfunc.capitalize()} of {target} by {col}'
+            # modify series
+            srs, if_trunc = _modify_srs_tell_if_trunc(df[col])
 
+            # groupby + add 'overall' if targeted
+            if target is None:
+                groupby = pd.Series(srs, name='count').groupby(srs).size().to_frame().reset_index()
+            else:
+                groupby = pd.concat([srs, df[target]], axis=1).groupby(col, as_index=False).agg({target : aggfunc})
 
-        fig = fmt_bar(groupby, title=title, **kwargs)
-        fig.show()
+            # truncate groupby
+            if if_trunc:
+                groupby = trunc_data_for_display(groupby)
+            
+
+            # plotting
+            if target is None:
+                title = f'Breakdown of {col}'
+            else:
+                title = f'{aggfunc.capitalize()} of {target} by {col}'
+
+            fig = fmt_bar(groupby, title=title, **kwargs)
+            fig.show()
     return None
