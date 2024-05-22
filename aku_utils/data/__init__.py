@@ -74,43 +74,6 @@ def type_breakdown(df):
     return srs.groupby('type').size().sort_values(ascending=False)
 
 
-def inspect_mean(df : pd.DataFrame,
-                 group : str = 'phone_service',
-                 target : str = 'churn_label',
-                 include_overall : bool = True,
-                 fast_bar : bool = False):
-    '''
-    Make a table with mean of target 
-
-    Args:
-        df: pd.DataFrame, original
-        group: name of the column with categories to divide df by ('phone_service')
-        target: name of the column with target values ('churn_label')
-        include_overall: whether to include the overall of target into table
-        fast_bar: whether to plot the bar with ak.fmt_bar() instead of returning the table (False).
-        For bar plot modification simply return table with `fast_bar = False` and wrap it around `ak.fmt_bar()`
-
-    Returns:
-        pd.DataFrame: if fast_bar is False
-        plotly.graph_objects.Figure: if fast_bar is True
-    '''
-
-    human_group_name = group.replace('_', ' ')
-    out = df.groupby(group, as_index=False)[target].mean()
-
-    if set(out[group].unique().tolist()) == {0, 1}:
-        out[group] = out[group].replace({0 : f'No {human_group_name}', 1 : human_group_name.capitalize()})
-    
-    if include_overall:
-        out = pd.concat([out, pd.DataFrame({group : ['Overall'], target : [df[target].mean()]})])
-
-    if fast_bar:
-        from aku_utils.plot import fmt_bar
-        return fmt_bar(out)
-    else:
-        return out
-
-
 def _get_optimal_display_objs(srs):
     '''
     Args: srs: values series from a groupby
@@ -142,57 +105,64 @@ def trunc_data_for_display(groupby, min_=4, max_=20) -> pd.DataFrame:
 
 
 def _bin_srs(srs):
-    pass
+    '''
+    optimal number of bins is observed via expert (me) analysis
+    '''
+    nbins = min(10, (srs.nunique()**0.375 + 1.6) // 1)
+    srs = pd.cut(srs, nbins)
+    return srs
 
 
-def _group_date(srs):
-    pass
+def _group_date(srs, threshold = 60):
+    '''
+    day, week, month, year - if date range is less than `threshold lst[i]`, then the grouper is lst[i]
+    '''
+    return srs
 
 
 def _how_to_treat_col(srs) -> dict:
     '''
     Returns:
         dict with key (str) - value (Any, but mostly bool) of:
-            srs - can bin the series, shouldnt do anything else
+            srs - should not modify the length or shuffle series
             needs_sorting
             needs_truncation
+            preferred_plot: one of 'bar' (default), 'line'
+            any_plot_text
     '''
     #gender binary
     if set(srs.unique()) == {0, 1} and srs.name == 'gender':
-        return {'srs' : srs.replace({0 : "Female", 1 : "Male"}), 'needs_sorting' : False, 'needs_truncation' : False}
-
-
-
-    if pd.api.types.is_object_dtype(srs):
-        return {'srs' : srs, 'needs_sorting' : True, 'needs_truncation' : True}
+        return {'srs' : srs.replace({0 : "Female", 1 : "Male"}), 'needs_sorting' : False, 'needs_truncation' : False, 'preferred_plot' : 'bar'}
 
     #binary
     if set(srs.unique()) == {0, 1}:
         human_srs_name = srs.name.replace('_', ' ')
-        return srs.replace({0 : f"No {human_srs_name}", 1 : f"{human_srs_name.capitalize()}"}), False
+        return {'srs' : srs.replace({0 : f"No {human_srs_name}", 1 : f"{human_srs_name.capitalize()}"}), 'needs_sorting' : False, 'needs_truncation' : False, 'preferred_plot' : 'bar'}
 
     #float or int
     if pd.api.types.is_numeric_dtype(srs):
         if srs.nunique() <= 10:
             # assumed to be ordinal category
-            return {'srs' : srs, 'needs_sorting' : True, 'needs_truncation' : False}
+            return {'srs' : srs, 'needs_sorting' : True, 'needs_truncation' : False, 'preferred_plot' : 'bar'}
         else:
             srs = _bin_srs(srs).astype('str')
-            return {'srs' : srs, 'needs_sorting' : True, 'needs_truncation' : False}
+            return {'srs' : srs, 'needs_sorting' : True, 'needs_truncation' : False, 'preferred_plot' : 'bar'}
 
     if pd.api.types.is_datetime64_any_dtype(srs):
         srs = _group_date(srs)
-        return {'srs' : srs, 'needs_sorting' : True, 'needs_truncation' : False}
+        return {'srs' : srs, 'needs_sorting' : True, 'needs_truncation' : False, 'skip_size_mode' : True, 'preferred_plot' : 'line', 'any_plot_text' : False}
 
+    if pd.api.types.is_object_dtype(srs):
+        return {'srs' : srs, 'needs_sorting' : True, 'needs_truncation' : True, 'preferred_plot' : 'bar'}
 
-    #else treat as object after converting to string (intervalindex)
+    #else (eg intervalindex) treat as object after converting to string
     srs = srs.astype('str')
-    return {'srs' : srs, 'needs_sorting' : True, 'needs_truncation' : True}
+    return {'srs' : srs, 'needs_sorting' : True, 'needs_truncation' : True, 'preferred_plot' : 'bar'}
 
 
 def explore(df : pd.DataFrame,
             columns : list,
-            modes : list = ['size'],
+            modes : list | None = None,
             target : str | None = None,
             aggfunc : str = 'mean',
             sort_any : bool = True,
@@ -211,9 +181,7 @@ def explore(df : pd.DataFrame,
             'targeted': plot mean (or other aggfunc) of column 'target' grouped by each column.
                 Ignored if target is not provided, added by itself if target is provided.
                 Yeah, as you can see it doesnt matter if its provided, but this is important for overall structure.
-            'scatter': scatter plot a column and target column. By default, a float 'explored' column will be binned and
-                then the mean of the target column will be groupby'd by these bins. If this mode is included,
-                the function will also (!) include a scatter plot
+            'scatter': scatter plot a column and target column. Will only work with numeric columns deemed as truly numeric (>10 unique values)
         target: target column to orient bar plots or scatter plots around
         aggfunc: function to aggregate target column by. Ignored if target is not provided
         sort_any: whether to apply sorting to any columns (from `columns`) - the algorithm will do that for some columns (True)
@@ -223,7 +191,13 @@ def explore(df : pd.DataFrame,
     Returns:
         Nothing. Plots plotly plots, all separate figures
     '''
-    from aku_utils.plot import fmt_bar
+    # option validating
+    if columns is not None:
+        for col in columns:
+            assert col in df.columns, f'column {col} not found in df'
+    
+    if target is not None:
+        assert target in df.columns, f'target column {target} not found in df'
 
     # option processing
     if columns is None:
@@ -232,6 +206,14 @@ def explore(df : pd.DataFrame,
         else:
             columns = df.drop(target, axis=1).columns
 
+    if modes is None:
+        modes = ['size']
+
+    if target is not None and 'targeted' not in modes:
+        modes.append('target')
+
+    # modes sorting: size, targeted, scatter
+    modes.sort(key=lambda x: {'size' : 1, 'targeted' : 2, 'scatter' : 3}.get(x))
 
     # start
     for mode in modes:
@@ -240,26 +222,5 @@ def explore(df : pd.DataFrame,
             treat_dict = _how_to_treat_col(srs)
             srs = treat_dict['srs']
 
-            # modify series
-            srs, if_trunc = _modify_srs_tell_if_trunc(df[col])
 
-            # groupby + add 'overall' if targeted
-            if target is None:
-                groupby = pd.Series(srs, name='count').groupby(srs).size().to_frame().reset_index()
-            else:
-                groupby = pd.concat([srs, df[target]], axis=1).groupby(col, as_index=False).agg({target : aggfunc})
-
-            # truncate groupby
-            if if_trunc:
-                groupby = trunc_data_for_display(groupby)
-            
-
-            # plotting
-            if target is None:
-                title = f'Breakdown of {col}'
-            else:
-                title = f'{aggfunc.capitalize()} of {target} by {col}'
-
-            fig = fmt_bar(groupby, title=title, **kwargs)
-            fig.show()
     return None
