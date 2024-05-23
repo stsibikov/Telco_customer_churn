@@ -73,11 +73,31 @@ def type_breakdown(df):
     return srs.groupby('type').size().sort_values(ascending=False)
 
 
-def type_breakdown(df):
-    srs = df.dtypes.to_frame().reset_index()
-    srs.columns = ['col', 'type']
-    return srs.groupby('type').size().sort_values(ascending=False)
+def uniq(srs, return_ : str = 'set'):
+    '''
+    unique no nan
 
+    return set by default
+    '''
+    unique = srs.unique()
+    unique = unique[~pd.isnull(unique)]
+    if return_ == 'set':
+        return set(unique)
+    else:
+        return unique
+
+
+def humanize_srs(srs):
+    '''
+    changes series name and sometimes values to object dtype. For display purpose only.
+    '''
+    srs_human_name = srs.name.replace('_', ' ')
+
+    from aku_utils.data import uniq
+    if uniq(srs) == {0, 1}:
+        return pd.Series(np.where(srs == 1, srs_human_name.capitalize(), f'No {srs_human_name}'), name=srs_human_name)
+    else:
+        return pd.Series(srs, name=srs_human_name)
 
 # def _get_optimal_display_objs(srs):
 #     '''

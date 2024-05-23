@@ -23,16 +23,18 @@ def bar(df,
     '''
     Make a Plotly barchart from the result of a groupby
 
+    It is recommended to not specify columns, in which case: `group` is 1st columns, `value` is the last.
+    If df has more than 2 column, which means that there are 2+ category columns, 2nd column in df becomes `color`.
+    If df has 2 columns, `color` is same as `group`.
+
+    If the df has 3 columns and percents are to be displayed, then the percents will be calculated per 'group',
+        so the sum of percents is `number of groups * 100`.
+
     Args:
         df: pd.DataFrame, already groupby'd with as_index=False. Index is ignored in this function
         group: name of the column with primary categories to divide df by (None)
         color: name of the column for `color` parameter for px.bar() (None)
         value: name of the column whose values will be plotted (None)
-
-        It is recommended to not specify columns, in which case: `group` is 1st columns, `value` is the last.
-        If df has more than 2 column, which means that there are 2+ category columns, 2nd column in df becomes `color`.
-        If df has 2 columns, `color` is same as `group`.
-
         If you have one of ```group, value, color``` specified, specify others as well
 
         display_values: whether to display values on bars (True)
@@ -47,6 +49,7 @@ def bar(df,
     Returns:
         fig: plotly.graph_objects.Figure
     '''
+    #option processing
     if group is None and value is None:
         group = df.columns[0]
         value = df.columns[-1]
@@ -58,7 +61,13 @@ def bar(df,
 
     #format bar annotations
     if display_pct:
-        df['%'] = df[value] / df[value].sum()
+
+        #check if color is used on separate column
+        if color != group:
+            df['%'] = df[value] / df.groupby(group)[value].transform('sum')
+        else:
+            df['%'] = df[value] / df[value].sum()
+        
         if display_values:
             text = [f'{value:.2f}<br>{pct:.2%}' for value, pct in zip(df[value], df['%'])]
         else:
