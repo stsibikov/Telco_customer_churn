@@ -75,9 +75,9 @@ def type_breakdown(df):
 
 def uniq(srs, return_ : str = 'set'):
     '''
-    unique no nan
+    unique, no nan
 
-    return set by default
+    returns a set by default, just the array of uniques otherwise
     '''
     unique = srs.unique()
     unique = unique[~pd.isnull(unique)]
@@ -98,6 +98,7 @@ def humanize_srs(srs):
         return pd.Series(np.where(srs == 1, srs_human_name.capitalize(), f'No {srs_human_name}'), name=srs_human_name)
     else:
         return pd.Series(srs, name=srs_human_name)
+
 
 # def _get_optimal_display_objs(srs):
 #     '''
@@ -185,86 +186,132 @@ def humanize_srs(srs):
 #     return {'srs' : srs, 'needs_sorting' : True, 'needs_truncation' : True, 'preferred_plot' : 'bar'}
 
 
-# def _infer_col_type(srs) -> str:
-#     '''
-#     Returns: str from ('numeric', 'ordinal', 'binary', 'object', 'date')
-#     '''
-
-#     return
-
-
-# def explore(df : pd.DataFrame,
-#             target : str | None = None,
-#             columns : list | None = None,
-#             modes_exclude : list | None = None,
-#             aggfunc : str = 'mean',
-#             **kwargs) -> None:
-#     '''
-#     Explore the dataset with simple visualizations.
+def _infer_col_type(srs : pd.Series) -> str:
+    '''
+    Returns one of:
+        numeric
+        object. Series with two unique object values will be counted as object, not binary.
+        binary
+        low-ordinal
+        high-ordinal
+        date
     
-#     To be used in EDA, after preprocessing. Requires proper typing for, for example, datetime columns,
-#         and proper values - for example, replacing unnecessary whitespaces in object column that creates more unique values than necessary.
+    Recommended to zip with column list for something like:
+        for col, dtype in zip(columns, col_dtypes):
+            ...
+    '''
+    if pd.api.types.is_object_dtype(srs):
+        return 'object'
 
-#     Exploration is done in modes:
-#         'size': plot bar plots of category sizes. Done for all columns, including the target. Bins numerical columns.
-#             For object columns, it will sort sizes from biggest to lowest. For object columns with medium+ (>=5) number of values, it will try
-#             to truncate the data, throwing out categories with low sizes.
-#         'box-plot': plots box plots of target column by categories of an 'exploring' column. If the exploring column is date, then line plot of mean is plotted.
-            
-#         'scatter': plots scatter plots of an exploring column and the target. The mode will be off if target column is 
-
-#     Args:
-#         df: original df
-#         target: target column to orient bar plots or scatter plots around. Must not be object, or date, 
-#         columns: columns to explore (all by default)
-
-
-#     Returns:
-#         Nothing. Plots figures from plotly
-#     '''
-#     #
-#     # option validating
-#     #
-#     if columns is not None:
-#         for col in columns:
-#             assert col in df.columns, f'column {col} not found in df'
+    if uniq(srs) == {0, 1}:
+        return 'binary'
     
-#     if target is not None:
-#         assert target in df.columns, f'target column {target} not found in df'
-#         if columns is not None:
-#             assert target not in columns, f'target column {target} found in list of columns to explore'
+    if pd.api.types.is_numeric_dtype(srs):
+        if uniq(srs) <= 10:
+            return 'low-ordinal'
+        elif uniq(srs) <= 100:
+            return 'high-ordinal'
+        else:
+            return 'numeric'
 
-#     #
-#     # option processing
-#     #
-#     if columns is None:
-#         if target is None:
-#             columns = df.columns
-#         else:
-#             columns = df.drop(target, axis=1).columns
+    if pd.api.types.is_datetime64_any_dtype(srs):
+        return 'date'
 
-#     if modes is None:
-#         modes = ['size']
-
-#     if target is not None and 'targeted' not in modes:
-#         modes.append('targeted')
-
-#     # remove scatter from modes if target column is binary
-
-#     # modes sorting: size, targeted, scatter
-#     modes.sort(key=lambda x: {'size' : 1, 'targeted' : 2, 'scatter' : 3}.get(x))
-
-#     # categorize columns
+    return 'object'
 
 
-#     #
-#     # start
-#     #
-#     for mode in modes:
-#         for col in columns:
-#             srs = df[col]
-#             treat_dict = _how_to_treat_col(srs)
-#             srs = treat_dict['srs']
+def _explore_mode_size(srs, dtype):
+    return
 
 
-#     return None
+
+def explore(df : pd.DataFrame,
+            target : str | None = None,
+            columns : list | None = None,
+            aggfunc : str = 'mean',
+            modes : list | None = None,
+            **kwargs) -> None:
+    '''
+    Explore the dataset with simple visualizations.
+    
+    To be used in EDA, after preprocessing. Requires proper typing for, for example, datetime columns,
+        and proper values - for example, replacing unnecessary whitespaces in object column that creates more unique values than there really are,
+        or replacing string values in ordinal (eg., test score out of 100) column.
+
+    Exploration is done in modes:
+        'size': plot bar plots of category sizes. Done for all columns, including the target. Bins numerical columns.
+            For object columns, it will sort sizes from biggest to lowest. For object columns with medium+ (>=6) number of values, it will try
+            to truncate the data, throwing out categories with low sizes.
+        'box-plot': plots box plots of target column values by categories of an 'exploring' column.
+            For date columns it will do plots, but the date will be aggregated into a few values.
+        'line-plot': plots line plots of mean (or other specified `aggfunc`) of target column by 'exploring' column.
+            If 'box-plot' is enabled, this mode will only do plots for date columns.
+        'scatter': plots scatter plots of an exploring column and the target.
+            The mode will only be on if target column is numeric or high-ordinal (see _infer_col_type())
+
+    Args:
+        df: original df
+        target: target column to orient bar plots or scatter plots around. Must not be object, or date, 
+        columns: columns to explore (all by default)
+        aggfunc: aggfunc to be used for target aggregation ('mean')
+        modes: manually set modes
+        kwargs: kwargs for passing into corresponding plotting methods, eg, plotly.express.bar().
+            Must be compatible with all used plotting methods, so not recommending using this.
+
+        It is recommended to only set the target column - the function is aimed at doing everything else itself
+    Returns:
+        Nothing. Plots figures from plotly
+    '''
+    #
+    # option validation
+    #
+    if columns is not None:
+        for col in columns:
+            assert col in df.columns, f'column {col} not found in df'
+
+    if target is not None:
+        assert target in df.columns, f'target column {target} not found in df'
+        assert pd.api.types.is_numeric_dtype(df[target]) is True, f'target {target} is not binary, ordinal or numeric'
+        if columns is not None:
+            assert target not in columns, f'target column {target} found in list of columns to explore'
+
+    if modes is not None:
+        for mode in modes:
+            assert mode in ['size', 'box-plot', 'line-plot', 'scatter'], f"mode {mode} not part of list: ['size', 'box-plot', 'line-plot', 'scatter']"
+
+    #
+    # option processing
+    #
+    if columns is None:
+        if target is None:
+            columns = df.columns
+        else:
+            columns = df.drop(target, axis=1).columns
+
+    if target is None and modes is None:
+        modes = ['size']
+    else:
+        modes = ['size', 'box-plot', 'line-plot', 'scatter']
+
+    target_dtype = _infer_col_type(df[target])
+
+    if 'scatter' in modes and target_dtype not in ['numeric', 'high-ordinal']:
+        modes.remove('scatter')
+
+    #
+    # categorize columns
+    #
+
+    col_dtypes = []
+    for col in columns:
+        col_dtypes.append(_infer_col_type(df[col]))
+
+    #
+    # start
+    #
+
+    if 'size' in modes:
+        for col, dtype in zip(columns, col_dtypes):
+            _explore_mode_size(col, dtype)
+
+    return None
