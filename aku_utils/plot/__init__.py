@@ -4,7 +4,15 @@ import numpy as np
 import plotly
 import plotly.express as px
 
-def fmt_bar(df,
+default_traces = dict(textfont_size=14, textangle=0, cliponaxis=False, textposition='outside')
+
+default_layout = dict(yaxis={'title':None,'tickfont':{'size':14}}, xaxis={'title':None,'tickfont':{'size':14}}, 
+                      margin={'t':60,'b':20,'l':20,'r':20,'pad':0}, showlegend=False)
+
+default_map_layout = dict(margin={'t':0,'b':0,'l':0,'r':0,'pad':0})
+
+
+def bar(df,
             group : str | None = None,
             color : str | None = None,
             value : str | None = None,
@@ -65,10 +73,10 @@ def fmt_bar(df,
     fig = px.bar(df, x=group, y=value, color=color, 
                  text=text, template='plotly_white', width=500, height=500, **kwargs)
     
-    fig.update_traces(textfont_size=14, textangle=0, cliponaxis=False, textposition='outside')
+    fig.update_traces(**default_traces)
 
-    fig.update_layout(yaxis={'title':None,'tickfont':{'size':14}}, xaxis={'title':None,'tickfont':{'size':14}}, 
-                      margin={'t':60,'b':20,'l':20,'r':20,'pad':0}, showlegend=False, title=title)
+    fig.update_layout(**default_layout)
+    fig.update_layout(title=title)
     return fig
 
 
