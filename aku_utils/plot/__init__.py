@@ -19,6 +19,7 @@ def bar(df,
             display_values : bool = True,
             display_pct : bool = True,
             title: str | None = None,
+            h : bool = False,
             **kwargs) -> plotly.graph_objects.Figure:
     '''
     Make a Plotly barchart from the result of a groupby
@@ -40,6 +41,7 @@ def bar(df,
         display_values: whether to display values on bars (True)
         display_pct: whether to display %s on bars (True)
         title: plot title ('Breakdown by age')
+        h: horizontal orientation (False)
 
         **kwargs: kwargs for plotly.express.bar().
         For other things - like layout - simply do:
@@ -78,8 +80,7 @@ def bar(df,
         else:
             text = None
   
-    
-    fig = px.bar(df, x=group, y=value, color=color, 
+    fig = px.bar(df, x=value if h else group, y=group if h else value, color=color, orientation='h' if h else None,
                  text=text, template='plotly_white', width=500, height=500, **kwargs)
     
     fig.update_traces(**default_traces)
