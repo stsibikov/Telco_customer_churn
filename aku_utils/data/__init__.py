@@ -98,3 +98,87 @@ def humanize_srs(srs):
         return pd.Series(np.where(srs == 1, srs_human_name.capitalize(), f'No {srs_human_name}'), name=srs_human_name)
     else:
         return pd.Series(srs, name=srs_human_name)
+
+
+class Corr_explorer():
+    def __init__(self, df, threshold = 0.6):
+        '''
+        As this is a constructor for class not used by itself, for docs please see corr()
+        '''
+        corr = df.corr().unstack().to_frame().reset_index()
+        corr.columns = ['var1', 'var2', 'corr']
+
+        corr = corr[corr['var1'] != corr['var2']]
+        
+        corr['abs_corr'] = corr['corr'].abs()
+        corr = corr.sort_values(by='abs_corr', ascending=False)
+        corr = corr[corr['abs_corr'] > threshold]
+
+        # we use this trick to hide mirrored rows
+        corr = corr.iloc[::2]
+        self.table = corr
+
+        return None
+
+
+    def graph(self, figsize : tuple = (12, 10)) -> None:
+        import networkx as nx
+        import matplotlib.pyplot as plt
+
+        G = nx.from_pandas_edgelist(
+            self.table,
+            source='var1',
+            target='var2',
+            edge_attr='abs_corr'
+        )
+
+        plt.figure(figsize=figsize)
+        plt.tight_layout()
+
+        pos = nx.circular_layout(G)
+
+        edges = nx.draw_networkx_edges(G, pos=pos, edge_color=self.table['abs_corr'], width=4, edge_cmap=plt.cm.viridis_r)
+        nodes = nx.draw_networkx_nodes(G, pos=pos, alpha=.5)
+
+        plt.colorbar(edges)
+
+        nx.draw_networkx_labels(G, pos=pos, font_size=10)
+        return None
+
+
+    def top(self) -> pd.DataFrame:
+        top_df = pd.DataFrame()
+        for col in pd.concat([self.table['var1'], self.table['var2']]).unique():
+            srs = self.table.loc[self.table['var1'] == col, 'abs_corr']
+            srs = pd.concat([srs, self.table.loc[self.table['var2'] == col, 'abs_corr']])
+
+            top_df = pd.concat([top_df, pd.DataFrame({'var' : [col], 'mean_corr' : [srs.mean()], 'n' : [len(srs)]})])
+
+        top_df = top_df.sort_values(by='n', ascending=False)
+        return top_df
+
+
+def corr(df, threshold=0.6):
+    '''
+    For when a heatmap is not enough. A constructor for correlation explorer class.
+
+    Args:
+        df
+        threshold: threshold for absolute correlation to include a var into the table
+
+    Returns:
+        Instance of Corr_explorer
+    
+    Attributes:
+        table: df of highly-correlated variables 
+
+    Methods:
+        graph: graph relationship between highly-correlated variables with Matplotlib and NetworkX.
+            Experimental feature, as 1) no automatic text-wrapping is a available for labels, so it looks bad
+            2) the best layout for not-totally-interconnected graph is the circular one, which also looks bad
+        top: creates table with var, mean_corr and n columns:
+            var: every unique column name (from self.table)
+            mean_corr: mean correlation in high correlation pairs, where the particular var is present
+            n: number of columns that this feature is highly correlated with
+    '''
+    return Corr_explorer(df, threshold)
