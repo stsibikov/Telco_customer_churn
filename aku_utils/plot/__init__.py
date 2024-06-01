@@ -51,6 +51,7 @@ def bar(df,
     Returns:
         fig: plotly.graph_objects.Figure
     '''
+    df = df.copy(deep=True)
     #option processing
     if group is None and value is None:
         group = df.columns[0]
