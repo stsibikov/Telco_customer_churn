@@ -72,12 +72,12 @@ def bar(df,
             df['%'] = df[value] / df[value].sum()
         
         if display_values:
-            text = [f'{value:.2f}<br>{pct:.2%}' for value, pct in zip(df[value], df['%'])]
+            text = [f'{value:,.2f}<br>{pct:.2%}' for value, pct in zip(df[value], df['%'])]
         else:
             text = [f'{pct:.2%}' for pct in df['%']]
     else:
         if display_values:
-            text = [f'{value:.2f}' for value in df[value]]
+            text = [f'{value:,.2f}' for value in df[value]]
         else:
             text = None
   
